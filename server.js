@@ -499,6 +499,39 @@ async function handleRunAgent(req, res) {
   }
 }
 
+async function handleRunBrowserUse(req, res) {
+  try {
+    const body = await parseRequestBody(req);
+    const goal = normalizeText(body.caseText);
+    if (!goal) {
+      await sendJson(res, 400, { ok: false, error: "请输入自然语言任务。" });
+      return;
+    }
+
+    await mkdir(path.join(__dirname, "generated"), { recursive: true });
+    const runId = randomUUID();
+    const browserUseCaseFile = path.join(__dirname, "generated", `browser-use-${runId}.json`);
+    const browserUseResultFile = path.join(__dirname, "generated", `browser-use-${runId}-result.json`);
+    await writeFile(browserUseCaseFile, JSON.stringify({ goal, runId }, null, 2), "utf8");
+
+    const result = await runBrowserUse(browserUseCaseFile, browserUseResultFile);
+    const browserUseResult = existsSync(browserUseResultFile)
+      ? JSON.parse(await readFile(browserUseResultFile, "utf8"))
+      : { ok: false, history: {}, error: "Browser Use result file was not created." };
+
+    await sendJson(res, result.exitCode === 0 ? 200 : 500, {
+      ...browserUseResult,
+      ok: result.exitCode === 0 && browserUseResult.ok,
+      command: result.command,
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr
+    });
+  } catch (error) {
+    await sendJson(res, 500, { ok: false, mode: "browser-use", error: error.message });
+  }
+}
+
 function runPlaywright(caseFile) {
   const command = process.platform === "win32" ? "npx.cmd" : "npx";
   const args = ["playwright", "test", "tests/dsl-runner.spec.js", "--project=chromium"];
@@ -525,6 +558,29 @@ function runPlaywrightAgent(agentCaseFile, agentResultFile) {
   const command = process.platform === "win32" ? "npx.cmd" : "npx";
   const args = ["playwright", "test", "tests/agent-runner.spec.js", "--project=chromium"];
   const env = { ...process.env, AGENT_CASE_FILE: agentCaseFile, AGENT_RESULT_FILE: agentResultFile, BASE_URL };
+
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { cwd: __dirname, env });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+    child.on("close", (exitCode) => {
+      resolve({ command: `${command} ${args.join(" ")}`, exitCode, stdout, stderr });
+    });
+  });
+}
+
+function runBrowserUse(caseFile, resultFile) {
+  const projectPython = path.join(__dirname, ".venv", "bin", "python");
+  const command = process.env.BROWSER_USE_PYTHON || (existsSync(projectPython) ? projectPython : "python3");
+  const args = ["scripts/browser_use_runner.py", caseFile];
+  const env = { ...process.env, BROWSER_USE_RESULT_FILE: resultFile };
 
   return new Promise((resolve) => {
     const child = spawn(command, args, { cwd: __dirname, env });
@@ -614,6 +670,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === "POST" && url.pathname === "/api/run-agent") {
     await handleRunAgent(req, res);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/run-browser-use") {
+    await handleRunBrowserUse(req, res);
     return;
   }
   await serveStatic(req, res);

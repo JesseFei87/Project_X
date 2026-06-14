@@ -25,12 +25,12 @@ export function normalizeText(text) {
   return String(text || "").trim().replace(/\s+/g, " ");
 }
 
-export function buildMiniMaxRequest(prompt, systemContent) {
+export function buildMiniMaxRequest(prompt, systemContent, options = {}) {
   const style = process.env.MINIMAX_API_STYLE || "openai";
   const model = process.env.MINIMAX_MODEL || "minimax-m3";
   const endpoint = buildMiniMaxEndpoint(style);
   const temperature = Number(process.env.MINIMAX_TEMPERATURE || 0.1);
-  const maxTokens = Number(process.env.MINIMAX_MAX_TOKENS || 1400);
+  const maxTokens = Number(options.maxTokens || process.env.MINIMAX_MAX_TOKENS || 1400);
   const headers = buildMiniMaxHeaders();
 
   if (style === "minimax-cn") {
@@ -107,13 +107,19 @@ export function parseMiniMaxResponseBody(raw) {
 }
 
 export function extractChatContent(payload) {
+  const choice = payload?.choices?.[0] || payload?.data?.choices?.[0];
   const content =
-    payload?.choices?.[0]?.message?.content ??
-    payload?.choices?.[0]?.text ??
+    choice?.message?.content ??
+    choice?.text ??
     payload?.reply ??
     payload?.data?.reply ??
     payload?.data?.choices?.[0]?.message?.content;
   if (typeof content === "string" && content.trim()) return content;
+  if (choice?.finish_reason === "length") {
+    throw new Error(
+      "MiniMax response was truncated before JSON content was produced. Increase AGENT_MINIMAX_MAX_TOKENS or shorten the page observation."
+    );
+  }
   throw new Error(`MiniMax response has no message content: ${JSON.stringify(payload).slice(0, 500)}`);
 }
 
@@ -169,7 +175,7 @@ export async function runBrowserAgentOnPage(page, goal, options = {}) {
       };
     }
 
-    const execution = await executeAgentAction(page, normalized, observation);
+    const execution = await tryExecuteAgentAction(page, normalized, observation);
     history.push({
       step: stepIndex + 1,
       decision: normalized,
@@ -190,6 +196,19 @@ export async function runBrowserAgentOnPage(page, goal, options = {}) {
     history,
     error: `Agent reached max steps (${maxSteps}).`
   };
+}
+
+async function tryExecuteAgentAction(page, decision, observation) {
+  try {
+    return await executeAgentAction(page, decision, observation);
+  } catch (error) {
+    return {
+      result: "error",
+      action: decision.action,
+      ref: decision.ref,
+      error: error.message
+    };
+  }
 }
 
 export async function observePage(page) {
@@ -338,7 +357,7 @@ export async function executeAgentAction(page, decision, observation) {
   }
 
   if (decision.action === "click") {
-    await locator.click({ timeout: 8000 });
+    await clickWithOverlayRetry(page, locator);
     return { result: "clicked", ref: decision.ref, selector: target.selector };
   }
 
@@ -350,6 +369,21 @@ export async function executeAgentAction(page, decision, observation) {
   throw new Error(`Unsupported agent action: ${decision.action}`);
 }
 
+async function clickWithOverlayRetry(page, locator) {
+  try {
+    await locator.click({ timeout: 8000 });
+  } catch (error) {
+    if (!isPointerInterceptError(error)) throw error;
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(500);
+    await locator.click({ timeout: 8000 });
+  }
+}
+
+function isPointerInterceptError(error) {
+  return /intercepts pointer events|Timeout .*locator\.click/i.test(error.message || "");
+}
+
 export function buildAgentPrompt(goal, observation, history, stepIndex, maxSteps) {
   const compactHistory = history.slice(-6).map((item) => ({
     step: item.step,
@@ -357,7 +391,7 @@ export function buildAgentPrompt(goal, observation, history, stepIndex, maxSteps
     ref: item.decision?.ref,
     value: item.decision?.value,
     url: item.execution?.url,
-    result: item.execution?.result || item.decision?.reason
+    result: item.execution?.error || item.execution?.result || item.decision?.reason
   }));
 
   return `你需要通过浏览器完成用户目标。请根据当前页面观察结果，决定下一步动作。
@@ -395,7 +429,8 @@ async function decideNextAgentAction(goal, observation, history, stepIndex, maxS
   const prompt = buildAgentPrompt(goal, observation, history, stepIndex, maxSteps);
   const request = buildMiniMaxRequest(
     prompt,
-    "你是一个受限的浏览器自动化 Agent。你只能输出合法 JSON，不输出 Markdown 或解释。你必须遵守动作白名单和安全边界。"
+    "你是一个受限的浏览器自动化 Agent。你只能输出合法 JSON，不输出 Markdown 或解释。不要输出思考过程。你必须遵守动作白名单和安全边界。",
+    { maxTokens: Number(process.env.AGENT_MINIMAX_MAX_TOKENS || 4096) }
   );
   const response = await fetch(request.endpoint, {
     method: "POST",

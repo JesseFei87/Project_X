@@ -91,6 +91,7 @@ Agent 模式相关配置：
 AGENT_HEADLESS=true
 AGENT_ALLOWED_HOSTS=*
 AGENT_STEP_DELAY_MS=700
+AGENT_MINIMAX_MAX_TOKENS=4096
 ```
 
 Agent 动作白名单：
@@ -101,8 +102,63 @@ goto, fill, click, press, wait, scroll, assert_text, finish, fail
 
 为了安全，`click/fill/press` 只能选择当前页面观察到的 `ref`，不能让模型凭空编 selector。
 
+如果报告里出现 `MiniMax response was truncated before JSON content was produced` 或 `finish_reason:"length"`，说明 MiniMax-M3 的输出 token 不够，动作 JSON 还没生成就被截断了。优先调高 `.env` 里的 `AGENT_MINIMAX_MAX_TOKENS`。
+
 如果需要限制 Agent 只能访问指定域名，把 `AGENT_ALLOWED_HOSTS=*` 改成逗号分隔的域名列表：
 
 ```bash
 AGENT_ALLOWED_HOSTS=example.com,www.example.com,127.0.0.1,localhost
 ```
+
+## Browser Use 实验性对照
+
+页面左侧还有 `Browser Use` 模式。它通过 Python 版 Browser Use 执行同一类浏览器 Agent 任务，用于和当前自研 Agent 对照。
+
+建议按 Browser Use 官方方式创建 Python 3.12 虚拟环境：
+
+```bash
+pip install uv
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install -r requirements-browser-use.txt
+uvx browser-use install
+```
+
+然后在 `.env` 指定 runner 使用这个虚拟环境：
+
+```bash
+BROWSER_USE_PYTHON=.venv/bin/python
+```
+
+注意：Browser Use 官方建议 Python 3.12。macOS 系统自带 Python 3.9 通常不够。
+
+Browser Use 的 OpenAI-compatible 配置：
+
+```bash
+BROWSER_USE_MODEL=minimax-m3
+BROWSER_USE_API_KEY=your_openai_compatible_key
+BROWSER_USE_BASE_URL=https://your-openai-compatible-base-url/v1
+```
+
+如果不配置 `BROWSER_USE_API_KEY` / `BROWSER_USE_BASE_URL`，runner 会尝试复用：
+
+```bash
+MINIMAX_API_KEY
+MINIMAX_BASE_URL
+```
+
+但如果你的 MiniMax 国内 Token Plan 是 `/text/chatcompletion_v2`，它可能不是 OpenAI-compatible，Browser Use 可能无法直接调用。
+
+当前 demo 已针对 MiniMax-M3 做了三处兼容处理：
+
+- 默认使用项目内 `.venv/bin/python`。
+- 默认 `BROWSER_USE_VISION=false`，避免 MiniMax 国内接口拒绝 Browser Use 的视觉参数。
+- 对 MiniMax-M3 返回的 `<think>...</think>` 做剥离，并提取动作 JSON 后再交给 Browser Use 校验。
+
+本地验证通过的最小任务：
+
+```text
+请访问以下网址并判断页面标题是否为测试登录页。网址是 http://127.0.0.1:3000/sample-app/login
+```
+
+验证结果：Browser Use 能通过 MiniMax-M3 打开本地页面并返回 `done`。
