@@ -1,0 +1,11 @@
+node_modules/
+test-results/
+playwright-report/
+generated/*.json
+!.gitkeep
+.env
+.codex/
+.playwright-cli/
+.playwright-cli-profile/
+.npm-cache/
+.DS_Store

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Natural Language Playwright Runner</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <section class="intro">
+      <div>
+        <p class="eyebrow">Playwright CLI Demo</p>
+        <h1>自然语言用例执行台</h1>
+      </div>
+      <a class="sample-link" href="/sample-app/login" target="_blank" rel="noreferrer">打开被测登录页</a>
+    </section>
+
+    <section class="workspace">
+      <div class="panel editor-panel">
+        <div class="panel-header">
+          <h2>测试用例</h2>
+          <button id="loadExample" type="button">示例</button>
+        </div>
+        <div class="mode-switch" role="group" aria-label="执行模式">
+          <label>
+            <input type="radio" name="runMode" value="dsl" checked />
+            <span>DSL模式</span>
+          </label>
+          <label>
+            <input type="radio" name="runMode" value="agent" />
+            <span>Agent模式</span>
+          </label>
+        </div>
+        <textarea id="caseText" spellcheck="false">打开登录页，输入账号 test001，输入密码 123456，点击登录按钮，验证进入首页并看到用户名 Jesse。</textarea>
+        <button id="runButton" class="run-button" type="button">
+          <span>Run</span>
+        </button>
+      </div>
+
+      <div class="panel result-panel">
+        <div class="panel-header">
+          <h2>执行结果</h2>
+          <span id="status" class="status idle">Idle</span>
+        </div>
+        <div class="result-grid">
+          <section>
+            <h3 id="primaryTitle">DSL</h3>
+            <pre id="dslOutput">{}</pre>
+          </section>
+          <section>
+            <h3 id="secondaryTitle">Playwright CLI Output</h3>
+            <pre id="cliOutput">点击 Run 后会在这里显示命令输出。</pre>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
