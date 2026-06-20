@@ -10,6 +10,7 @@ generated/*.json
 .playwright-cli-profile/
 .npm-cache/
 .browser-use/
+.agent-browser-home/
 .DS_Store
 doc/task_plan.md
 doc/progress.md

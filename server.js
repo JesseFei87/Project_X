@@ -12,6 +12,7 @@ import {
   normalizeText,
   parseMiniMaxResponseBody
 } from "./agent-core.js";
+import { buildAgentBrowserCase, runAgentBrowserCase } from "./agent-browser-runner.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 await loadDotEnv();
@@ -532,6 +533,51 @@ async function handleRunBrowserUse(req, res) {
   }
 }
 
+async function handleRunAgentBrowser(req, res) {
+  try {
+    const body = await parseRequestBody(req);
+    const caseText = normalizeText(body.caseText);
+    if (!caseText) {
+      await sendJson(res, 400, { ok: false, mode: "agent-browser", error: "请输入自然语言任务。" });
+      return;
+    }
+
+    const testCase = await buildAgentBrowserCase(caseText, { baseUrl: BASE_URL });
+    if (!Array.isArray(testCase.steps) || testCase.steps.length === 0) {
+      await sendJson(res, 422, {
+        ok: false,
+        mode: "agent-browser",
+        testCase,
+        error: "Agent Browser 未生成可执行步骤。"
+      });
+      return;
+    }
+
+    if (testCase.steps.some((step) => step.value === "__UNSAFE_OR_UNCLEAR__" || step.value === "__UNSUPPORTED_CASE__")) {
+      await sendJson(res, 422, {
+        ok: false,
+        mode: "agent-browser",
+        testCase,
+        error: "当前自然语言任务不适合直接转成 agent-browser 执行计划。"
+      });
+      return;
+    }
+
+    const result = await runAgentBrowserCase(testCase, { cwd: __dirname });
+    await sendJson(res, result.ok ? 200 : 500, {
+      ...result,
+      mode: "agent-browser",
+      testCase,
+      command: result.history.map((item) => item.command).filter(Boolean).join("\n\n"),
+      stdout: result.history.map((item) => item.stdout).filter(Boolean).join("\n\n"),
+      stderr: result.history.map((item) => item.stderr).filter(Boolean).join("\n\n"),
+      reportUrl: null
+    });
+  } catch (error) {
+    await sendJson(res, 500, { ok: false, mode: "agent-browser", error: error.message });
+  }
+}
+
 function runPlaywright(caseFile) {
   const command = process.platform === "win32" ? "npx.cmd" : "npx";
   const args = ["playwright", "test", "tests/dsl-runner.spec.js", "--project=chromium"];
@@ -674,6 +720,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === "POST" && url.pathname === "/api/run-browser-use") {
     await handleRunBrowserUse(req, res);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/run-agent-browser") {
+    await handleRunAgentBrowser(req, res);
     return;
   }
   await serveStatic(req, res);

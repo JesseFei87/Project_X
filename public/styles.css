@@ -113,7 +113,7 @@ h3 {
 
 .mode-switch {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   margin-bottom: 12px;
   padding: 4px;
@@ -245,6 +245,10 @@ pre {
 
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  .mode-switch {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   h1 {

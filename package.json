@@ -8,8 +8,8 @@
     "test:e2e": "playwright test",
     "install:browsers": "playwright install chromium"
   },
-  "dependencies": {},
   "devDependencies": {
-    "@playwright/test": "^1.53.0"
+    "@playwright/test": "^1.53.0",
+    "agent-browser": "^0.28.0"
   }
 }

@@ -162,3 +162,62 @@ MINIMAX_BASE_URL
 ```
 
 验证结果：Browser Use 能通过 MiniMax-M3 打开本地页面并返回 `done`。
+
+## Agent Browser 第四模式
+
+页面左侧新增 `Agent Browser` 模式。它不走 Playwright test，也不走 Browser Use，而是：
+
+```text
+自然语言任务 -> MiniMax-M3 生成受限执行计划 -> agent-browser CLI 执行浏览器动作 -> 当前页面聚合结构化报告
+```
+
+这个模式的职责边界：
+
+- 自然语言理解：当前 Node 服务 + MiniMax-M3
+- 浏览器执行：`agent-browser` CLI
+- 报告展示：当前 Web 页面右侧结果面板
+
+安装依赖：
+
+```bash
+npm install agent-browser
+agent-browser install
+```
+
+如果你用 Homebrew，也可以：
+
+```bash
+brew install agent-browser
+agent-browser install
+```
+
+如果不是全局安装，可以通过 `.env` 指定可执行文件：
+
+```bash
+AGENT_BROWSER_BIN=/absolute/path/to/agent-browser
+AGENT_BROWSER_MINIMAX_MAX_TOKENS=2400
+AGENT_BROWSER_COMMAND_TIMEOUT_MS=30000
+AGENT_BROWSER_OPEN_WAIT_UNTIL=load
+AGENT_BROWSER_STEP_WAIT_VALUE=load
+```
+
+第四模式当前支持的动作：
+
+```text
+open, fill, click, press, wait, assert_text, assert_url_contains
+```
+
+定位优先级：
+
+```text
+label / text / role / placeholder / testid / selector
+```
+
+注意：
+
+- 该模式不复用 Playwright HTML Report，右侧面板展示的是结构化步骤报告。
+- 当前 v1 采用“执行器模式”，没有接 `agent-browser chat`。
+- 如果本机没有安装 `agent-browser`，接口会直接返回明确报错，不做降级补偿。
+- 公网页面如果长期加载资源，`networkidle` 可能卡住；默认打开页面后的等待策略已改为 `load`，仍可通过 `.env` 覆盖。
+- 模型如果生成显式 `wait: networkidle`，当前实现也会按 `AGENT_BROWSER_STEP_WAIT_VALUE` 归一化，默认同样使用 `load`。
+- 当前实现沿用 `agent-browser` 默认的 `~/.agent-browser` daemon/state 目录，因为受控目录下的本地 socket 绑定会失败。
